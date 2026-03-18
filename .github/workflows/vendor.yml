@@ -1,0 +1,65 @@
+name: picoclaw Vendor Generator
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - master
+
+env:
+  VERSION: "v0.2.3"
+
+permissions:
+  contents: write
+
+jobs:
+  generate-vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Download picoclaw Source
+        run: |
+          VERSION="${{ env.VERSION }}"
+          URL="https://github.com/sipeed/picoclaw/archive/refs/tags/${VERSION}.tar.gz"
+          
+          echo "Downloading $URL..."
+          curl -L "$URL" -o picoclaw-source.tar.gz
+          
+          rm -rf picoclaw-src
+          mkdir picoclaw-src
+          tar -xzf picoclaw-source.tar.gz -C picoclaw-src --strip-components=1
+
+      - name: Generate Vendor
+        run: |
+          cd picoclaw-src
+          go mod vendor
+          
+          if [ ! -d "vendor" ]; then
+            echo "Error: Vendor directory not created!"
+            exit 1
+          fi
+
+      - name: Archive Vendor Package
+        run: |
+          VERSION="${{ env.VERSION }}"
+          tar -czf "picoclaw-${VERSION}-vendor.tar.gz" -C picoclaw-src/ vendor/
+          sha256sum "picoclaw-${VERSION}-vendor.tar.gz" > "picoclaw-${VERSION}-vendor.tar.gz.sha256"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: "Vendor Package ${{ env.VERSION }}"
+          files: |
+            picoclaw-*-vendor.tar.gz
+            picoclaw-*-vendor.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
